@@ -197,3 +197,22 @@ curl --location --request POST 'http://localhost:3001/jobs/3/pay' \
     "message": "Payment successful for job with id: 3"
 }
 ```
+
+#### Balances
+
+##### POST /balances/deposit/:userId
+
+```bash
+curl --location --request POST 'http://localhost:3001/balances/deposit/2' \
+     --header 'profile_id: 2' \
+     --header 'Content-Type: application/json' \
+     --data-raw '{
+        "amount": 42
+      }'
+```
+
+```json
+{
+    "message": "Balance deposit successful"
+}
+```
