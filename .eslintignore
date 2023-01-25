@@ -1,0 +1,6 @@
+.husky
+.vscode
+coverage
+deploy
+dist
+node_modules
