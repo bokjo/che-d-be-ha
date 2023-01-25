@@ -124,3 +124,60 @@ When you have finished the assignment, create a github repository and send us th
   
 
 Thank you and good luck! 🙏
+
+
+## Implementation
+
+### Examples
+
+#### Contracts
+
+##### GET /contracts/:id
+
+```bash
+curl --location --request GET 'http://localhost:3001/contracts/1' \
+     --header 'profile_id: 1'
+```
+
+```json
+{
+    "id": 1,
+    "terms": "bla bla bla",
+    "status": "terminated",
+    "createdAt": "2023-01-25T20:20:20.812Z",
+    "updatedAt": "2023-01-25T20:20:20.812Z",
+    "ContractorId": 5,
+    "ClientId": 1
+}
+```
+
+##### GET /contracts
+
+```bash
+curl --location --request GET 'http://localhost:3001/contracts' \
+--header 'profile_id: 2'
+```
+
+```json
+[
+    {
+        "id": 3,
+        "terms": "bla bla bla",
+        "status": "in_progress",
+        "createdAt": "2023-01-25T20:20:20.812Z",
+        "updatedAt": "2023-01-25T20:20:20.812Z",
+        "ContractorId": 6,
+        "ClientId": 2
+    },
+    {
+        "id": 4,
+        "terms": "bla bla bla",
+        "status": "in_progress",
+        "createdAt": "2023-01-25T20:20:20.813Z",
+        "updatedAt": "2023-01-25T20:20:20.813Z",
+        "ContractorId": 7,
+        "ClientId": 2
+    }
+]
+```
+
