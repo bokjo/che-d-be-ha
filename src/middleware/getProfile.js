@@ -1,3 +1,4 @@
+// eslint-disable-next-line consistent-return
 const getProfile = async (req, res, next) => {
   const { Profile } = req.app.get("models");
 

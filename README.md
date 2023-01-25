@@ -216,3 +216,45 @@ curl --location --request POST 'http://localhost:3001/balances/deposit/2' \
     "message": "Balance deposit successful"
 }
 ```
+
+#### Admin
+
+##### GET /admin/best-profession?start=<date>&end=<date>
+
+```bash
+curl --location --request GET 'http://localhost:3001/admin/best-profession?start=2023-01-20&end=2023-01-30' \
+     --header 'profile_id: 1'
+```
+
+```json
+{
+    "profession": "Programmer"
+}
+```
+
+##### GET /admin/best-clients?start=<date>&end=<date>&limit=<integer>
+
+```bash
+curl --location --request GET 'http://localhost:3001/admin/best-clients?start=2023-01-20&end=2023-01-30&limit=3' \
+     --header 'profile_id: 1'
+```
+
+```json
+[
+    {
+        "id": 4,
+        "fullName": "Ash Kethcum",
+        "paid": 2020
+    },
+    {
+        "id": 2,
+        "fullName": "Mr Robot",
+        "paid": 644
+    },
+    {
+        "id": 1,
+        "fullName": "Harry Potter",
+        "paid": 643
+    }
+]
+```

@@ -1,12 +1,12 @@
 const express = require("express");
 const bodyParser = require("body-parser");
-
 const { Op } = require("sequelize");
+
+const { pinoHttp } = require("pino-http");
+const { logger } = require("./logger");
+
 const { sequelize } = require("./model");
 const { getProfile, clientsAllowedOnly } = require("./middleware");
-
-const { logger } = require("./logger");
-const { pinoHttp } = require("pino-http");
 
 const app = express();
 app.use(bodyParser.json());
@@ -42,9 +42,7 @@ app.get("/contracts/:id", getProfile, async (req, res) => {
   } catch (error) {
     logger.error(error);
     // TODO: create dedicated error and pass it to next(), propagate at the top for the top level error handler
-    return res
-      .status(500)
-      .json({ message: "Unknown error: getting contract by id!" });
+    return res.status(500).json({ message: "Unknown error: getting contract by id!" });
   }
 });
 
@@ -75,9 +73,7 @@ app.get("/contracts", getProfile, async (req, res) => {
     return res.status(200).json(contracts);
   } catch (error) {
     logger.error(error);
-    return res
-      .status(500)
-      .json({ message: "Unknown error: listing contracts!" });
+    return res.status(500).json({ message: "Unknown error: listing contracts!" });
   }
 });
 
@@ -114,9 +110,7 @@ app.get("/jobs/unpaid", getProfile, async (req, res) => {
     return res.status(200).json(contracts);
   } catch (error) {
     logger.error(error);
-    return res
-      .status(500)
-      .json({ message: "Unknown error: listing unpaid jobs!" });
+    return res.status(500).json({ message: "Unknown error: listing unpaid jobs!" });
   }
 });
 
@@ -124,87 +118,74 @@ app.get("/jobs/unpaid", getProfile, async (req, res) => {
  * Create Payment for a job
  * @returns list all unpaid jobs for a user
  */
-app.post(
-  "/jobs/:job_id/pay",
-  getProfile,
-  clientsAllowedOnly,
-  async (req, res) => {
-    const { Job, Contract, Profile } = req.app.get("models");
-    const { job_id } = req.params;
-    const { id: profileId } = req.profile;
+app.post("/jobs/:job_id/pay", getProfile, clientsAllowedOnly, async (req, res) => {
+  const { Job, Contract, Profile } = req.app.get("models");
+  const { job_id } = req.params;
+  const { id: profileId } = req.profile;
 
-    const tx = await sequelize.transaction();
+  const tx = await sequelize.transaction();
 
-    try {
-      const job = await Job.findOne({
+  try {
+    const job = await Job.findOne({
+      where: {
+        id: job_id,
+      },
+      include: {
+        model: Contract,
         where: {
-          id: job_id,
-        },
-        include: {
-          model: Contract,
-          where: {
-            [Op.not]: {
-              status: "terminated",
-            },
-            ClientId: profileId,
+          [Op.not]: {
+            status: "terminated",
           },
+          ClientId: profileId,
         },
-        transaction: tx,
-      });
+      },
+      transaction: tx,
+    });
 
-      if (!job) {
-        return res
-          .status(404)
-          .json({ message: `Job with id: ${job_id} not found` });
-      }
-
-      if (job.paid) {
-        return res
-          .status(400)
-          .json({ message: `Job with id: ${job_id} already paid` });
-      }
-
-      if (req.profile.balance < job.amount) {
-        return res.status(400).json({
-          message: "Insufficient funds in your balance!",
-          balance: req.profile.balance,
-        });
-      }
-
-      // TODO: handle decimals and potential rounding properly
-      req.profile.balance = req.profile.balance - job.price;
-
-      await req.profile.save({ transaction: tx });
-
-      const contractorToUpdate = await Profile.findOne({
-        where: { id: job.Contract.ContractorId, type: "contractor" },
-        transaction: tx,
-      });
-
-      // TODO: handle decimals and potential rounding properly
-      contractorToUpdate.balance = contractorToUpdate.balance + job.price;
-
-      await contractorToUpdate.save({ transaction: tx });
-
-      job.paid = 1;
-      job.paymentDate = new Date();
-      await job.save({ transaction: tx });
-      await tx.commit();
-
-      // TODO: clarify and standardize the response format (DTOs needed)!
-      return res
-        .status(200)
-        .json({ message: `Payment successful for job with id: ${job_id}` });
-    } catch (error) {
-      await tx.rollback();
-
-      logger.error(error);
-      return res
-        .status(500)
-        .json({ message: "Unknown error: Create Job Payment!" });
+    if (!job) {
+      return res.status(404).json({ message: `Job with id: ${job_id} not found` });
     }
+
+    if (job.paid) {
+      return res.status(400).json({ message: `Job with id: ${job_id} already paid` });
+    }
+
+    if (req.profile.balance < job.amount) {
+      return res.status(400).json({
+        message: "Insufficient funds in your balance!",
+        balance: req.profile.balance,
+      });
+    }
+
+    // TODO: handle decimals and potential rounding properly
+    req.profile.balance -= job.price;
+
+    await req.profile.save({ transaction: tx });
+
+    const contractorToUpdate = await Profile.findOne({
+      where: { id: job.Contract.ContractorId, type: "contractor" },
+      transaction: tx,
+    });
+
+    // TODO: handle decimals and potential rounding properly
+    contractorToUpdate.balance += job.price;
+
+    await contractorToUpdate.save({ transaction: tx });
+
+    job.paid = 1;
+    job.paymentDate = new Date();
+    await job.save({ transaction: tx });
+    await tx.commit();
+
+    // TODO: clarify and standardize the response format (DTOs needed)!
+    return res.status(200).json({ message: `Payment successful for job with id: ${job_id}` });
+  } catch (error) {
+    await tx.rollback();
+
+    logger.error(error);
+    return res.status(500).json({ message: "Unknown error: Create Job Payment!" });
   }
-);
+});
 
 // Balances
 
@@ -218,7 +199,10 @@ app.post("/balances/deposit/:userId", getProfile, async (req, res) => {
   const amount = parseFloat(req.body.amount);
 
   /**
-   * Requirement: ***POST*** `/balances/deposit/:userId` - Deposits money into the the the balance of a client, a client can't deposit more than 25% his total of jobs to pay. (at the deposit moment)
+   * Requirement:
+   * ***POST*** `/balances/deposit/:userId`
+   * Deposits money into the the the balance of a client,
+   * a client can't deposit more than 25% his total of jobs to pay. (at the deposit moment)
    *
    * NOTE: A bit confused about this requirement and its wording (despite the typos and grammar)
    * 1. Assume you can deposit to your own balance multiple times if the amount is < unpaidTotal + 25%?
@@ -227,15 +211,11 @@ app.post("/balances/deposit/:userId", getProfile, async (req, res) => {
 
   // TODO: implement proper input validation with Joi or something similar!
   if (!amount || amount === "NaN") {
-    return res
-      .status(400)
-      .json({ message: "Please provide proper value for deposit amount!" });
+    return res.status(400).json({ message: "Please provide proper value for deposit amount!" });
   }
 
-  if (parseInt(userId) !== parseInt(req.profile.id)) {
-    return res
-      .status(400)
-      .json({ message: "You can only deposit to your own balance!" });
+  if (parseInt(userId, 10) !== parseInt(req.profile.id, 10)) {
+    return res.status(400).json({ message: "You can only deposit to your own balance!" });
   }
 
   const tx = await sequelize.transaction();
@@ -272,7 +252,7 @@ app.post("/balances/deposit/:userId", getProfile, async (req, res) => {
       });
     }
 
-    req.profile.balance = req.profile.balance + amount;
+    req.profile.balance += amount;
     await req.profile.save({ transaction: tx });
 
     await tx.commit();
@@ -282,9 +262,173 @@ app.post("/balances/deposit/:userId", getProfile, async (req, res) => {
     await tx.rollback();
 
     logger.error(error);
-    return res
-      .status(500)
-      .json({ message: "Unknown error: Create balance deposit!" });
+    return res.status(500).json({ message: "Unknown error: Create balance deposit!" });
+  }
+});
+
+// Admin
+
+/**
+ * Admin Best Profession
+ * @returns most popular profession in a given time period
+ */
+app.get("/admin/best-profession", getProfile, async (req, res) => {
+  const { Job, Contract, Profile } = req.app.get("models");
+  const { start, end } = req.query;
+
+  // TODO: parse the start and end dates and validate them properly!
+  // TODO: check if start date is before end date!
+  if (!start) {
+    return res.status(400).json({
+      message: "Please provide 'start' date as query parameter! [format: YYYY-MM-DD]",
+    });
+  }
+
+  if (!end) {
+    return res.status(400).json({
+      message: "Please provide 'end' date as query parameter! [format: YYYY-MM-DD]",
+    });
+  }
+
+  try {
+    const [bestProfession] = await Job.findAll({
+      where: {
+        // TODO: change if start and end dates should be optional
+        paid: true,
+        createdAt: {
+          // TODO: clarify requirement, date between [createdAt, updatedAt or paymentDate]?
+          [Op.between]: [start, end],
+        },
+      },
+      include: {
+        model: Contract,
+        include: {
+          model: Profile,
+          as: "Contractor",
+          attributes: ["profession"],
+        },
+      },
+      group: ["profession"],
+      order: [[sequelize.fn("sum", sequelize.col("price")), "DESC"]],
+      limit: 1,
+    });
+
+    const profession = bestProfession?.Contract?.Contractor?.profession ?? null;
+
+    return res.status(200).json({ profession });
+  } catch (error) {
+    logger.error(error);
+    return res.status(500).json({ message: "Unknown error: Admin Best Profession!" });
+  }
+});
+
+/**
+ * Admin Best Profession
+ * @returns most popular profession in a given time period
+ */
+app.get("/admin/best-profession", getProfile, async (req, res) => {
+  const { Job, Contract, Profile } = req.app.get("models");
+  const { start, end } = req.query;
+
+  // TODO: parse the start and end dates and validate them properly!
+  // TODO: check if start date is before end date!
+  if (!start) {
+    return res.status(400).json({ message: "Please provide start date as query parameter!" });
+  }
+
+  if (!end) {
+    return res.status(400).json({ message: "Please provide end date as query parameter!" });
+  }
+
+  try {
+    const [bestProfession] = await Job.findAll({
+      where: {
+        // TODO: change if start and end dates should be optional
+        paid: true,
+        createdAt: {
+          // TODO: clarify requirement, date between [createdAt, updatedAt or paymentDate]?
+          [Op.between]: [start, end],
+        },
+      },
+      include: {
+        model: Contract,
+        include: {
+          model: Profile,
+          as: "Contractor",
+          attributes: ["profession"],
+        },
+      },
+      group: ["profession"],
+      limit: 1,
+      order: [[sequelize.fn("sum", sequelize.col("price")), "DESC"]],
+    });
+
+    const profession = bestProfession?.Contract?.Contractor?.profession ?? null;
+
+    return res.status(200).json({ profession });
+  } catch (error) {
+    logger.error(error);
+    return res.status(500).json({ message: "Admin best-profession unknown error!" });
+  }
+});
+
+/**
+ * Admin Best Clients
+ * @returns list of clients that paid the most for jobs in the query time period
+ */
+app.get("/admin/best-clients", getProfile, async (req, res) => {
+  const { Job, Contract, Profile } = req.app.get("models");
+  // eslint-disable-next-line prefer-const
+  let { start, end, limit } = req.query;
+
+  // TODO: parse the start and end dates and validate them properly!
+  // TODO: check if start date is before end date!
+  if (!start) {
+    return res.status(400).json({ message: "Please provide start date as query parameter!" });
+  }
+
+  if (!end) {
+    return res.status(400).json({ message: "Please provide end date as query parameter!" });
+  }
+
+  if (!limit || parseInt(limit, 10) === "NaN" || limit < 1) {
+    limit = 2;
+  }
+
+  try {
+    const bestClients = await Job.findAll({
+      attributes: [[sequelize.fn("sum", sequelize.col("price")), "paid"]],
+      where: {
+        // TODO: change if start and end dates should be optional
+        paid: true,
+        createdAt: {
+          // TODO: clarify requirement, date between [createdAt, updatedAt or paymentDate]?
+          [Op.between]: [start, end],
+        },
+      },
+      include: {
+        model: Contract,
+        include: {
+          model: Profile,
+          as: "Client",
+          attributes: ["id", [sequelize.literal("firstName || ' ' || lastName"), "fullName"]],
+        },
+      },
+      group: ["Contract.Client.id"],
+      order: [[sequelize.fn("sum", sequelize.col("price")), "DESC"]],
+      limit,
+    });
+
+    const response = bestClients.map((client) => ({
+      id: client.Contract.Client.id,
+      fullName: client.Contract.Client.dataValues.fullName,
+      paid: client.paid,
+    }));
+
+    return res.status(200).json(response);
+  } catch (error) {
+    logger.error(error);
+    return res.status(500).json({ message: "Unknown error: Admin Best Clients!" });
   }
 });
 
