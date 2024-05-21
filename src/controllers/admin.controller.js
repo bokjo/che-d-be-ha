@@ -1,36 +1,27 @@
 const { Op } = require("sequelize");
-const { logger } = require("../logger");
-const { sequelize } = require("../model");
+const { logger } = require("../shared/logger");
+const { sequelize } = require("../db/models/model");
+const { adminInputDateValidator } = require("../shared/validators");
+const { BaseError, ListBestClientsError, GetBestProfessionError } = require("../errors");
 
+// TODO: move to admin controller class
 /**
  * Admin Best Profession
  * @returns most popular profession in a given time period
  */
-const getBestProfession = async (req, res) => {
-  const { Job, Contract, Profile } = req.app.get("models");
+const getBestProfession = async (req, res, next) => {
   const { start, end } = req.query;
 
-  // TODO: parse the start and end dates and validate them properly!
-  // TODO: check if start date is before end date!
-  if (!start) {
-    return res.status(400).json({
-      message: "Please provide 'start' date as query parameter! [format: YYYY-MM-DD]",
-    });
-  }
-
-  if (!end) {
-    return res.status(400).json({
-      message: "Please provide 'end' date as query parameter! [format: YYYY-MM-DD]",
-    });
-  }
-
   try {
+    await adminInputDateValidator(start, end);
+
+    const { Job, Contract, Profile } = req.app.get("models");
+
+    // TODO: move to admin service/repository class
     const [bestProfession] = await Job.findAll({
       where: {
-        // TODO: change if start and end dates should be optional
         paid: true,
         createdAt: {
-          // TODO: clarify requirement, date between [createdAt, updatedAt or paymentDate]?
           [Op.between]: [start, end],
         },
       },
@@ -51,8 +42,13 @@ const getBestProfession = async (req, res) => {
 
     return res.status(200).json({ profession });
   } catch (error) {
-    logger.error(error);
-    return res.status(500).json({ message: "Unknown error: Admin Best Profession!" });
+    logger.error({ getBestProfessionError: error });
+
+    // TODO: handle DB/Sequelize errors!
+
+    if (error instanceof BaseError) return next(error);
+
+    return next(new GetBestProfessionError(`Failed to fetch the best profession between ${start} and ${end}`));
   }
 };
 
@@ -60,33 +56,25 @@ const getBestProfession = async (req, res) => {
  * Admin Best Clients
  * @returns list of clients that paid the most for jobs in the query time period
  */
-const listBestClients = async (req, res) => {
-  const { Job, Contract, Profile } = req.app.get("models");
-  // eslint-disable-next-line prefer-const
-  let { start, end, limit } = req.query;
-
-  // TODO: parse the start and end dates and validate them properly!
-  // TODO: check if start date is before end date!
-  if (!start) {
-    return res.status(400).json({ message: "Please provide start date as query parameter!" });
-  }
-
-  if (!end) {
-    return res.status(400).json({ message: "Please provide end date as query parameter!" });
-  }
-
-  if (!limit || parseInt(limit, 10) === "NaN" || limit < 1) {
-    limit = 2;
-  }
+const listBestClients = async (req, res, next) => {
+  const { start, end } = req.query;
 
   try {
+    await adminInputDateValidator(start, end);
+
+    // TODO: move to validator/default handler and add page!
+    let { limit } = req.query;
+    if (!limit || Number.isNaN(parseInt(limit, 10)) || limit < 1) {
+      limit = 2;
+    }
+
+    const { Job, Contract, Profile } = req.app.get("models");
+
     const bestClients = await Job.findAll({
       attributes: [[sequelize.fn("sum", sequelize.col("price")), "paid"]],
       where: {
-        // TODO: change if start and end dates should be optional
         paid: true,
         createdAt: {
-          // TODO: clarify requirement, date between [createdAt, updatedAt or paymentDate]?
           [Op.between]: [start, end],
         },
       },
@@ -111,8 +99,13 @@ const listBestClients = async (req, res) => {
 
     return res.status(200).json(response);
   } catch (error) {
-    logger.error(error);
-    return res.status(500).json({ message: "Unknown error: Admin Best Clients!" });
+    logger.error({ listBestClientsError: error });
+
+    // TODO: handleDB/Sequelize errors!
+
+    if (error instanceof BaseError) return next(error);
+
+    return next(new ListBestClientsError("Failed to fetch the best clients"));
   }
 };
 

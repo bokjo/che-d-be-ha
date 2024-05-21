@@ -1,9 +1,16 @@
 // eslint-disable-next-line max-classes-per-file
 const Sequelize = require("sequelize");
+const { ProfileType, ContractStatus } = require("../../shared/enums");
 
 const sequelize = new Sequelize({
   dialect: "sqlite",
   storage: "./database.sqlite3",
+  pool: {
+    max: 1,
+    min: 0,
+    acquire: 30000,
+    idle: 10000,
+  },
 });
 
 class Profile extends Sequelize.Model {}
@@ -25,7 +32,7 @@ Profile.init(
       type: Sequelize.DECIMAL(12, 2),
     },
     type: {
-      type: Sequelize.ENUM("client", "contractor"),
+      type: Sequelize.ENUM(ProfileType.CLIENT, ProfileType.CONTRACTOR),
     },
   },
   {
@@ -42,7 +49,7 @@ Contract.init(
       allowNull: false,
     },
     status: {
-      type: Sequelize.ENUM("new", "in_progress", "terminated"),
+      type: Sequelize.ENUM(ContractStatus.NEW, ContractStatus.IN_PROGRESS, ContractStatus.TERMINATED),
     },
   },
   {
