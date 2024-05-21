@@ -1,5 +1,5 @@
 const app = require("./app");
-const { logger } = require("./logger");
+const { logger } = require("../shared/logger");
 
 async function init() {
   try {
