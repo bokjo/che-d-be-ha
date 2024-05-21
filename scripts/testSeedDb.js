@@ -1,5 +1,6 @@
 const { Profile, Contract, Job } = require("../src/db/models/model");
 
+// TODO: TEMP, just used for tests
 async function seed() {
   // create tables
   await Profile.sync({ force: true });
@@ -225,5 +226,10 @@ async function seed() {
   ]);
 }
 
-/* WARNING THIS WILL DROP THE CURRENT DATABASE */
-seed();
+async function cleanUpDB() {
+  await Profile.drop();
+  await Contract.drop();
+  await Job.drop();
+}
+
+module.exports = { seed, cleanUpDB };
